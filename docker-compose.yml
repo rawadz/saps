@@ -69,7 +69,7 @@ services:
     build:
       context: ./frontend
     ports:
-      - "80:80"        # the ONLY host-exposed port — the public entrypoint
+      - "8080:80"        # the ONLY host-exposed port — the public entrypoint
     depends_on:
       - backend
     networks:
