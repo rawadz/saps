@@ -1,0 +1,169 @@
+# =============================================================================
+#  e-SAPS — PRODUCTION stack (server: /opt/e-saps, behind shared Traefik)
+#
+#  Standalone, Traefik-native. The frontend nginx is the ONLY thing joined to the
+#  shared external `web` network; Traefik routes https://police.moi-sy.online to it.
+#  Backend + Postgres + Redis stay on the private `esaps-net` (no host ports).
+#
+#  Deploy ALWAYS with an explicit -f so the dev override is never auto-merged:
+#      docker compose -f docker-compose.prod.yml up -d --build
+#  Migrate + seed (one-shot):
+#      docker compose -f docker-compose.prod.yml --profile tools run --rm migrate
+#  DB guards ONCE (non-idempotent SQL — do NOT chain into the migrate command):
+#      docker compose -f docker-compose.prod.yml --profile tools run --rm \
+#        migrate npx prisma db execute --file prisma/manual/001_db_level_guards.sql --schema prisma/schema.prisma
+# =============================================================================
+
+name: esaps
+
+services:
+  # ── Backend API (private network only) ───────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    env_file:
+      # A literal `$` in any secret here MUST be written `$$` in .env (Compose
+      # un-escapes `$$`→`$` on load), else it is treated as a variable and mangled.
+      - .env
+    environment:
+      NODE_ENV: production
+      # Explicit so the container listens on the port nginx proxies to (backend:3000),
+      # regardless of any PORT in .env.
+      PORT: 3000
+      # Rebuild the URLs to the INTERNAL service names (compose `environment:` wins
+      # over env_file, so the dev localhost URLs in .env are ignored in-container).
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    volumes:
+      # Static JWT keys mounted read-only at runtime — never baked into the image.
+      - ./jwt-private.pem:/app/jwt-private.pem:ro
+      - ./jwt-public.pem:/app/jwt-public.pem:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/health',r=>process.exit(r.statusCode<400?0:1)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - esaps-net
+    restart: unless-stopped
+
+  # ── Frontend (nginx: SPA + reverse-proxy /api → backend) — the public entrypoint
+  frontend:
+    build:
+      context: ./frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=web
+      - traefik.http.routers.esaps.rule=Host(`police.moi-sy.online`)
+      - traefik.http.routers.esaps.entrypoints=websecure
+      - traefik.http.routers.esaps.priority=100
+      - traefik.http.routers.esaps.tls=true
+      - traefik.http.routers.esaps.tls.certresolver=le
+      - traefik.http.services.esaps.loadbalancer.server.port=80
+      - traefik.http.routers.esaps.middlewares=esaps-sec
+      - traefik.http.middlewares.esaps-sec.headers.stsSeconds=31536000
+      - traefik.http.middlewares.esaps-sec.headers.stsIncludeSubdomains=true
+      - traefik.http.middlewares.esaps-sec.headers.stsPreload=true
+      - traefik.http.middlewares.esaps-sec.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.esaps-sec.headers.frameDeny=true
+      - traefik.http.middlewares.esaps-sec.headers.browserXssFilter=true
+      - traefik.http.middlewares.esaps-sec.headers.referrerPolicy=strict-origin-when-cross-origin
+    networks:
+      - esaps-net   # reach the private backend for /api proxying
+      - web         # reachable by the shared Traefik ingress
+    restart: unless-stopped
+
+  # ── PostgreSQL 17 (private) ──────────────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - esaps-net
+    restart: unless-stopped
+
+  # ── Redis 7 (private) ────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    # Redis holds SESSIONS / refresh state / ban list — not pure cache — so cap
+    # memory but NEVER evict (noeviction), or auth state would silently drop.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    # Needed by the healthcheck below (the container shell expands $REDIS_PASSWORD).
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - esaps-net
+    restart: unless-stopped
+
+  # ── One-shot migrate + seed runner ───────────────────────────────────────────
+  #  Built from the `build` target so it still has the Prisma CLI + ts-node + src.
+  #  profiles:[tools] keeps it out of `up`; restart:"no" so a finished run exits.
+  #  DB guards SQL is non-idempotent → run it as a SEPARATE one-shot (see header).
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: build
+    profiles: [tools]
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - esaps-net
+    restart: "no"
+    command: sh -c "npx prisma migrate deploy && npx prisma db seed"
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  esaps-net:
+    driver: bridge
+  web:
+    external: true

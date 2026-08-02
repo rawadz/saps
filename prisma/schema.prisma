@@ -1,0 +1,329 @@
+// =============================================================================
+//  e-SAPS — Prisma schema
+//
+//  Six tables: users, employees, barcodes, permits, vehicle_permits, audit_logs.
+//
+//  SECURITY NOTES baked into this model (see the project's security standards):
+//   • Sensitive identifiers (self_id, military_id) are stored AES-256 ENCRYPTED in
+//     the *_enc columns and looked up via a deterministic keyed *_search_hash —
+//     never by querying ciphertext. Encryption/decryption happens in the app's
+//     CryptoService; Prisma only stores opaque strings.
+//   • Passwords are Argon2id hashes (users.password_hash), never reversible.
+//   • Two DB-level invariants cannot be expressed in Prisma's schema DSL and ship
+//     as a SQL supplement (see prisma/manual/001_db_level_guards.sql):
+//        - vehicle_permits CHECK: a vehicle is linked to an employee OR a visitor
+//          permit, never both, never neither (no anonymous vehicles).
+//        - audit_logs is append-only (no UPDATE/DELETE) via a trigger.
+// =============================================================================
+
+generator client {
+  provider      = "prisma-client-js"
+  // "native" builds the engine for the local dev host (Windows); the explicit
+  // debian target builds the Linux engine the Docker runtime (bookworm + openssl 3)
+  // needs — so a host-generated client and a container-generated one both work.
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ────────────────────────────────────────────────────────────────────
+
+enum Role {
+  super_admin
+  branch_head
+  supervisor
+  guard
+  permit_officer
+  hr
+  department_manager
+  hr_head
+}
+
+enum PersonnelType {
+  civilian
+  military
+}
+
+enum EmployeeStatus {
+  pending // created, awaiting activation — cannot enter or log in yet
+  active
+  suspended
+  terminated
+}
+
+// Service / employment exit status — SEPARATE from the ban and the account lifecycle.
+enum ServiceStatus {
+  active // in service (normal)
+  transferred // منقول من الإدارة (civilian + military)
+  discharged // مسرّح من الخدمة (military only)
+  contract_ended // منتهي التعاقد (civilian only)
+}
+
+enum PermitType {
+  scheduled
+  single_entry
+}
+
+enum PermitStatus {
+  active // scheduled: in force / single_entry: issued, not yet used
+  used // single_entry: consumed on first successful scan (replay-proof)
+  expired
+  cancelled
+}
+
+// Direction a gate admits traffic. `both` = bidirectional.
+enum GateDirection {
+  in
+  out
+  both
+}
+
+// ── users ────────────────────────────────────────────────────────────────────
+// Administrative / security accounts (branch head, supervisor, guard, permit
+// officer, HR). They log in with username + Argon2id password. Regular employees
+// authenticate by Employee ID only and do NOT have a row here.
+model User {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  username           String   @unique
+  passwordHash       String   @map("password_hash") // Argon2id
+  role               Role
+  isAccountActivated Boolean  @default(false) @map("is_account_activated")
+  // Seeded/admin accounts start with this true and must set a new password on
+  // first login (the initial password comes from an env var, never the repo).
+  mustChangePassword Boolean  @default(false) @map("must_change_password")
+  fullName           String?  @map("full_name")
+  // Optional link to the holder's employee profile.
+  employeeId         String?  @unique @map("employee_id") @db.Uuid
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  employee           Employee?            @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  barcodesIssued     Barcode[]
+  permitsIssued      Permit[]
+  gates              Gate[]
+  gateAccessAssigned EmployeeGateAccess[]
+  auditLogs          AuditLog[]
+
+  @@map("users")
+}
+
+// ── employees ──────────────────────────────────────────────────────────────
+// self_id and military_id are AES-encrypted at rest; equality lookups use the
+// deterministic *_search_hash. military_id is optional: a NULLable @unique on the
+// search hash gives partial-unique behavior (PostgreSQL treats NULLs as distinct,
+// so any number of employees may have no military id).
+model Employee {
+  id                   String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  selfIdEnc            String  @map("self_id_enc")
+  selfIdSearchHash     String  @unique @map("self_id_search_hash")
+  militaryIdEnc        String? @map("military_id_enc")
+  militaryIdSearchHash String? @unique @map("military_id_search_hash")
+  // Contact phone — sensitive: AES-256-GCM encrypted at rest like the ids above, with a
+  // separate keyed search hash for equality lookup. NOT unique (a number may be shared).
+  phoneEnc             String? @map("phone_enc")
+  phoneSearchHash      String? @map("phone_search_hash")
+
+  // Operational / HR fields (non-sensitive, stored in clear).
+  fullName          String  @map("full_name")
+  // Search-normalized copy of full_name (Arabic-folded, lowercased). App-maintained on
+  // write via normalizeArabicName(); powers the directory search. Backfilled for existing
+  // rows. Any future full-name mutation MUST recompute this column.
+  fullNameNormalized String @map("full_name_normalized")
+  commandDepartment String? @map("command_department")
+  branch            String?
+  priority          String? // importance level
+  rank              String?
+  currentJobTitle   String? @map("current_job_title")
+  photoUrl          String? @map("photo_url")
+  extraFields       Json?   @map("extra_fields") // flexible HR fields (jsonb)
+
+  // Gate/ban operational state (from the Skill's employees definition).
+  personnelType  PersonnelType  @default(civilian) @map("personnel_type")
+  status         EmployeeStatus @default(pending)
+  isEntryBlocked Boolean        @default(false) @map("is_entry_blocked")
+
+  // Service/employment exit status — SEPARATE from the ban (is_entry_blocked) and the
+  // account lifecycle (status). A non-active service status blocks the gate, with the
+  // user-entered exit date + optional note shown at scan.
+  serviceStatus   ServiceStatus @default(active) @map("service_status")
+  serviceExitDate DateTime?     @map("service_exit_date") @db.Date
+  serviceExitNote String?       @map("service_exit_note")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  barcode        Barcode?
+  vehiclePermits VehiclePermit[]
+  gateAccess     EmployeeGateAccess[]
+  user           User?
+
+  @@index([status])
+  @@index([isEntryBlocked])
+  @@index([serviceStatus])
+  @@index([phoneSearchHash])
+  // Trigram GIN index so substring LIKE on the normalized name is indexable. Requires
+  // the pg_trgm extension (created in the migration). Managed by hand-authored SQL.
+  @@index([fullNameNormalized(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@map("employees")
+}
+
+// ── barcodes ─────────────────────────────────────────────────────────────────
+// A permanent, HMAC-signed reference to an Employee ID. Generated ONCE at
+// activation and never regenerated when admin data changes. One per employee.
+model Barcode {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  employeeId  String   @unique @map("employee_id") @db.Uuid
+  token       String   @unique // signed token, e.g. v1.<base64url(id)>.<base64url(hmac)>
+  generatedBy String?  @map("generated_by") @db.Uuid
+  generatedAt DateTime @default(now()) @map("generated_at") @db.Timestamptz(6)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  employee        Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  generatedByUser User?    @relation(fields: [generatedBy], references: [id], onDelete: SetNull)
+
+  @@map("barcodes")
+}
+
+// ── permits ──────────────────────────────────────────────────────────────────
+// Visitor permits: scheduled (date/day/time window) and single-entry (2-hour
+// window, flips to `used` on first successful scan, in the same transaction).
+model Permit {
+  id           String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  permitNumber String       @unique @map("permit_number")
+  permitType   PermitType   @map("permit_type")
+  status       PermitStatus @default(active)
+
+  visitorName         String         @map("visitor_name")
+  // Visitor national id / phone — AES-encrypted, with a search hash for lookup.
+  idOrPhoneEnc        String?        @map("id_or_phone_enc")
+  idOrPhoneSearchHash String?        @map("id_or_phone_search_hash")
+  personnelType       PersonnelType? @map("personnel_type")
+  host                String // the employee/department being visited
+  reason              String?
+  token               String?        @unique // signed permit token (namespace: permit:<number>)
+
+  // Scheduled-permit fields.
+  startDate        DateTime? @map("start_date") @db.Date
+  endDate          DateTime? @map("end_date") @db.Date
+  allowedDays      Int[]     @map("allowed_days") // 0=Sun .. 6=Sat
+  allowedTimeFrom  String?   @map("allowed_time_from") // 'HH:mm'
+  allowedTimeTo    String?   @map("allowed_time_to") // 'HH:mm'
+  allowedEquipment Json?     @map("allowed_equipment")
+
+  // Single-entry fields.
+  expiresAt DateTime? @map("expires_at") @db.Timestamptz(6)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(6)
+
+  issuedBy  String?  @map("issued_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  issuedByUser   User?           @relation(fields: [issuedBy], references: [id], onDelete: SetNull)
+  vehiclePermits VehiclePermit[]
+
+  @@index([status])
+  @@index([permitType])
+  @@index([expiresAt])
+  @@map("permits")
+}
+
+// ── vehicle_permits ────────────────────────────────────────────────────────
+// A vehicle can NEVER be anonymous. Each row links to EXACTLY ONE of an employee
+// or a visitor permit — enforced by a DB CHECK (see the SQL supplement). The
+// vehicle inherits the status of whatever it is linked to.
+model VehiclePermit {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  plateNumber     String    @map("plate_number")
+  vehicleType     String?   @map("vehicle_type")
+  color           String?
+  make            String?
+  model           String?
+  // Exactly one of these is set (CHECK: vehicle_must_have_owner).
+  employeeId      String?   @map("employee_id") @db.Uuid
+  visitorPermitId String?   @map("visitor_permit_id") @db.Uuid
+  barcodeToken    String?   @unique @map("barcode_token")
+  status          String    @default("active")
+  expiresAt       DateTime? @map("expires_at") @db.Timestamptz(6)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  employee      Employee? @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  visitorPermit Permit?   @relation(fields: [visitorPermitId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId])
+  @@index([visitorPermitId])
+  @@map("vehicle_permits")
+}
+
+// ── audit_logs ───────────────────────────────────────────────────────────────
+// Append-only history of every security-relevant event. Records event type,
+// actor, gate, result and (non-sensitive) subject reference — NEVER national ids,
+// phones, plaintext employee ids, tokens or secrets. UPDATE/DELETE are blocked at
+// the DB level by a trigger (see the SQL supplement) so history cannot be rewritten.
+model AuditLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  type        String // e.g. entry_check_approved, entry_check_denied, permit_issue, entry_block
+  subjectType String?  @map("subject_type") // 'employee' | 'permit'
+  subjectRef  String?  @map("subject_ref") // employee id reference or permit number (not PII)
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  gateName    String?  @map("gate_name")
+  // The gate's stable id — a historical reference, NOT a foreign key: audit_logs is
+  // append-only, so an FK cascade (SET NULL) would be blocked by the no-mutation
+  // trigger. gate_name above stays as the human-readable snapshot.
+  gateId      String?  @map("gate_id") @db.Uuid
+  result      String // 'success' | 'failure'
+  reason      String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6) // server-set timestamp
+
+  actorUser User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([type])
+  @@index([subjectRef])
+  @@index([createdAt])
+  @@index([gateId])
+  @@map("audit_logs")
+}
+
+// ── gates ──────────────────────────────────────────────────────────────────────
+// Administration gates (entry/exit points): a standalone, editable config entity —
+// name, direction (in/out/both), vehicle support, and an active flag. CRUD is
+// restricted to leadership roles. The gate scan currently records a free-text
+// gateName only; binding a scan to a Gate row is a later step.
+model Gate {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String        @unique
+  direction        GateDirection // no default — required at creation
+  supportsVehicles Boolean       @default(false) @map("supports_vehicles")
+  isActive         Boolean       @default(true) @map("is_active")
+  createdBy        String?       @map("created_by") @db.Uuid
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  createdByUser  User?                @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  employeeAccess EmployeeGateAccess[]
+
+  @@index([isActive])
+  @@map("gates")
+}
+
+// ── employee_gate_access ─────────────────────────────────────────────────────
+// البوابات المصرّح لكل موظف بالعبور منها (علاقة many-to-many بين الموظفين والبوابات).
+// أوّل جدول ربط في المشروع. يخزّن «بيانات التصريح» فقط؛ والتحقّق من البوابة/الاتجاه
+// لحظة المسح خطوة لاحقة تقرأ هذه المنح حيّةً — ولا شيء يُضمَّن في الباركود (يبقى معرّفاً
+// موقّعاً بـ HMAC). المفتاح المركّب يفرض منحة واحدة لكل (موظف، بوابة)؛ assigned_by/at للتدقيق.
+model EmployeeGateAccess {
+  employeeId String   @map("employee_id") @db.Uuid
+  gateId     String   @map("gate_id") @db.Uuid
+  assignedBy String?  @map("assigned_by") @db.Uuid // المسؤول الذي منح الصلاحية (تدقيق)
+  assignedAt DateTime @default(now()) @map("assigned_at") @db.Timestamptz(6)
+
+  employee       Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  gate           Gate     @relation(fields: [gateId], references: [id], onDelete: Cascade)
+  assignedByUser User?    @relation(fields: [assignedBy], references: [id], onDelete: SetNull)
+
+  @@id([employeeId, gateId])
+  @@index([gateId]) // بحث عكسي «من يُسمح له بهذه البوابة» + أداء المفتاح الأجنبي
+  @@map("employee_gate_access")
+}

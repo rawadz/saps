@@ -1,0 +1,27 @@
+# =============================================================================
+#  e-SAPS — DEVELOPMENT overrides
+#
+#  Compose merges this file automatically on `docker compose up`. It publishes
+#  host ports for LOCAL DEVELOPMENT ONLY, so a backend you run on the host
+#  (`npm run start:dev`) can reach the datastores:
+#
+#       PostgreSQL :  localhost:5440  ->  container 5432
+#       Redis      :  localhost:6385  ->  container 6379
+#
+#  These mappings are deliberately kept OUT of docker-compose.yml: production must
+#  never expose the datastores to the host. Run a production-shaped stack with:
+#       docker compose -f docker-compose.yml up -d --build
+#
+#  Recommended dev workflow (datastores in Docker, API on the host):
+#       docker compose up -d postgres redis
+#       npm run start:dev
+# =============================================================================
+
+services:
+  postgres:
+    ports:
+      - "5440:5432"
+
+  redis:
+    ports:
+      - "6385:6379"

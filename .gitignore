@@ -1,0 +1,43 @@
+# =============================================================================
+#  e-SAPS — .gitignore
+#  Secrets and dependencies are listed FIRST, by policy: they must never be
+#  committed under any circumstances.
+# =============================================================================
+.env
+node_modules/
+
+# Any other local env variants — but always keep the safe template.
+.env.*
+!.env.example
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Cryptographic material — private keys / certs must never be committed.
+*.pem
+*.key
+*.crt
+secrets/
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Editor / OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+.DS_Store
+Thumbs.db
+
+.claude/

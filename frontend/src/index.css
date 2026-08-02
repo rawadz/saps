@@ -1,0 +1,1235 @@
+:root {
+  /* ── Official theme v2 — Syrian MoI, Rehabilitation & Training ────────────────
+     Approved palette: lighter teal-emerald + gold, glassmorphism. The legacy
+     semantic names at the bottom are REPOINTED to these new tokens so every screen
+     re-themes at once, with no change to any component. */
+
+  /* Background gradient stops */
+  --bg-1: #2e7d67;
+  --bg-2: #16463a;
+  --bg-3: #1f5b4b;
+
+  /* Ink + muted text (cream on teal) */
+  --ink: #f5f2ea;
+  --muted: rgba(245, 242, 234, 0.62);
+  --muted-2: rgba(245, 242, 234, 0.42);
+
+  /* Gold accents */
+  --gold: #c9ae78;
+  --gold-lite: #dcc48c;
+  --gold-2: #bb9d63;
+  --on-gold: #2a2310; /* dark ink for text on a gold fill */
+
+  /* Hairlines (glass borders) */
+  --line: rgba(255, 255, 255, 0.1);
+  --line-2: rgba(255, 255, 255, 0.15);
+
+  /* Status — success / danger (defined now; wired into rules in a later phase) */
+  --ok-t: #86d6ab;
+  --ok-bg: rgba(70, 170, 120, 0.16);
+  --ok-bd: rgba(120, 210, 165, 0.42);
+  --bad-t: #e7b0a8;
+  --bad-bg: rgba(200, 120, 112, 0.16);
+  --bad-bd: rgba(225, 150, 142, 0.46);
+
+  /* Corner radii */
+  --r: 22px;
+  --r2: 16px;
+  --r3: 12px;
+
+  /* ── Legacy tokens repointed to the new palette (components stay untouched) ── */
+  --green-1: var(--on-gold); /* now only consumed as text-on-gold */
+  --green-2: var(--bg-2);
+  --green-3: var(--bg-3);
+  --green-4: var(--bg-1);
+  --gold-deep: var(--gold-2);
+  --gold-light: var(--gold-lite);
+
+  --bg: var(--bg-2);
+  --panel: rgba(16, 56, 46, 0.55); /* deep-teal glass card */
+  --border: var(--line); /* gold hairline → soft white glass hairline */
+  --text: var(--ink);
+  --accent: var(--gold);
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  min-height: 100vh;
+}
+
+body {
+  /* RTL Arabic with the official Tajawal font (loaded in index.html). */
+  direction: rtl;
+  text-align: right;
+  font-family:
+    'Tajawal', 'Segoe UI', Tahoma, 'Noto Sans Arabic', Arial, sans-serif;
+  /* Approved theme gradient: a soft gold glow over a teal-emerald radial. */
+  background:
+    radial-gradient(
+      900px 600px at 78% -5%,
+      rgba(201, 174, 120, 0.1),
+      transparent 55%
+    ),
+    radial-gradient(
+      1100px 760px at 68% 10%,
+      var(--bg-1),
+      var(--bg-3) 46%,
+      var(--bg-2) 100%
+    );
+  background-attachment: fixed;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── App-wide RTL inheritance ────────────────────────────────────────────────────────
+   The whole UI is RTL (body above). Form controls are the ONE class of element that does
+   not inherit `direction` on its own AND that the original markup pinned with per-element
+   dir="ltr" attributes. This single, general rule makes EVERY input/select/textarea
+   inherit the root RTL (author CSS overrides the dir attribute), so cursor, text and
+   placeholder start on the right everywhere — no per-field handling, no exceptions.
+   Latin/number runs (IDs, phones) keep their own internal order via the bidi algorithm;
+   only the alignment follows RTL. */
+input,
+select,
+textarea {
+  direction: inherit;
+}
+
+/* Directional chevrons mirror with the RTL layout: the tile "drill-in" arrow points the
+   RTL-forward way instead of the hardcoded LTR glyph direction. */
+.dash-tile-arrow {
+  transform: scaleX(-1);
+}
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.card {
+  width: 100%;
+  max-width: 30rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 3rem 2rem;
+  text-align: center;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+.title {
+  font-size: 2.5rem;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.subtitle {
+  margin-top: 0.85rem;
+  color: var(--muted);
+  line-height: 2;
+  font-size: 1.05rem;
+}
+
+.badge {
+  display: inline-block;
+  margin-top: 1.75rem;
+  padding: 0.45rem 1.1rem;
+  border-radius: 999px;
+  background: rgba(201, 174, 120, 0.12);
+  border: 1px solid var(--gold-2);
+  color: var(--gold-lite);
+  font-size: 0.95rem;
+}
+
+/* Connection-state variants (override the base colors; same specificity, later wins). */
+.badge-pending {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.badge-ok {
+  background: var(--ok-bg);
+  border-color: var(--ok-bd);
+  color: var(--ok-t);
+}
+
+.badge-error {
+  background: var(--bad-bg);
+  border-color: var(--bad-bd);
+  color: var(--bad-t);
+}
+
+/* ── Login screen + welcome ───────────────────────────────────────────────── */
+.login-card {
+  max-width: 26rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 1.5rem;
+  padding: 0.3rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+}
+
+.tab {
+  flex: 1;
+  padding: 0.55rem 0.5rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.tab:hover {
+  color: var(--text);
+}
+
+.tab-active {
+  background: linear-gradient(180deg, var(--gold-lite), var(--gold-2));
+  color: var(--on-gold);
+  font-weight: 700;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  text-align: right;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.label {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.input {
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r3);
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+  outline: none;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.input:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(201, 174, 120, 0.18);
+}
+
+.input:disabled {
+  opacity: 0.6;
+}
+
+/* ── Native control theming: <select> + date/time on the teal-glass theme ───────────
+   Every native <select> and date/time <input> uses .input, so this re-skins all of them
+   at once — no per-screen markup, no component library. .input already sets the glass
+   box + gold focus ring; we add the missing appearance reset, a gold caret, and dark
+   picker chrome so the browser's default light widgets stop showing through. */
+
+/* Selects: strip native chrome; draw a gold caret. Selects inherit RTL from <body>, so
+   the caret sits on the LEFT — reserve that side's padding. select.input (0,1,1) beats
+   .input (0,1,0) for these longhands but leaves .input's background/focus ring intact. */
+select.input {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-left: 2.5rem;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none' stroke='%23c9ae78' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 0.9rem center;
+  background-size: 12px 8px;
+}
+
+/* The dropdown list itself: dark glass + cream ink where the browser honors it
+   (Chromium/Firefox). Options can't be translucent, so use a solid deep teal. */
+select.input option {
+  background-color: #12352c;
+  color: var(--text);
+}
+
+/* Date/time: color-scheme:dark renders the field text AND the popup calendar/clock on a
+   dark surface (the biggest win); tint the native picker glyph gold. These inputs carry
+   dir="ltr" in markup, so the indicator stays on the right. */
+input[type='date'].input,
+input[type='time'].input {
+  color-scheme: dark;
+}
+input[type='date'].input::-webkit-calendar-picker-indicator,
+input[type='time'].input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.85;
+  filter: invert(78%) sepia(18%) saturate(560%) hue-rotate(1deg) brightness(92%);
+}
+input[type='date'].input::-webkit-calendar-picker-indicator:hover,
+input[type='time'].input::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+.form-error {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--r3);
+  background: var(--bad-bg);
+  border: 1px solid var(--bad-bd);
+  color: var(--bad-t);
+  font-size: 0.92rem;
+}
+
+.btn {
+  margin-top: 0.5rem;
+  padding: 0.75rem 1rem;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--gold-lite), var(--gold-2));
+  color: var(--on-gold);
+  font: inherit;
+  font-size: 1.02rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    opacity 0.15s,
+    box-shadow 0.15s,
+    transform 0.05s;
+}
+
+.btn:hover:not(:disabled) {
+  opacity: 0.92;
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Depth on the FILLED gold buttons only (.btn, .btn-scan, .btn-camera). The outline /
+   danger variants override the background, so they're excluded here and stay flat. */
+.btn:not(.btn-secondary):not(.btn-ghost-gold):not(.btn-danger) {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.btn:not(.btn-secondary):not(.btn-ghost-gold):not(.btn-danger):hover:not(:disabled) {
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.26);
+}
+
+.btn-secondary {
+  margin-top: 1.5rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  color: var(--text);
+  opacity: 1;
+}
+
+/* Elegant gold ghost button (e.g. the dashboard logout). */
+.btn-ghost-gold {
+  margin-top: 1.5rem;
+  background: transparent;
+  border: 1px solid var(--gold-2);
+  color: var(--gold-lite);
+  font-weight: 700;
+}
+
+.btn-ghost-gold:hover:not(:disabled) {
+  border-color: var(--gold);
+  background: rgba(201, 174, 120, 0.08);
+  opacity: 1;
+}
+
+.welcome {
+  margin-top: 1rem;
+  font-size: 1.15rem;
+  color: var(--text);
+}
+
+/* ── Protected-endpoint diagnostic (temporary auth test) ──────────────────────── */
+.test-result {
+  margin-top: 1rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--r3);
+  font-size: 0.92rem;
+  text-align: center;
+}
+
+.test-ok {
+  background: var(--ok-bg);
+  border: 1px solid var(--ok-bd);
+  color: var(--ok-t);
+}
+
+.test-error {
+  background: var(--bad-bg);
+  border: 1px solid var(--bad-bd);
+  color: var(--bad-t);
+}
+
+.token {
+  display: block;
+  margin-top: 0.6rem;
+  padding: 0.5rem;
+  border-radius: var(--r3);
+  background: rgba(16, 56, 46, 0.7);
+  color: var(--muted);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.75rem;
+  word-break: break-all;
+  direction: ltr;
+}
+
+/* ── Gate scan screen ─────────────────────────────────────────────────────────── */
+.scan-card {
+  max-width: 30rem;
+}
+
+.scan-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.scan-title {
+  font-size: 1.8rem;
+}
+
+.logout-link {
+  flex-shrink: 0;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.logout-link:hover {
+  color: var(--text);
+}
+
+.btn-scan {
+  font-size: 1.25rem;
+  padding: 0.95rem;
+}
+
+.scan-result {
+  margin-top: 1.5rem;
+  padding: 2.5rem 1.5rem;
+  border-radius: var(--r2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.4rem;
+}
+
+.scan-green {
+  background: var(--ok-bg);
+  border: 2px solid var(--ok-bd);
+}
+
+.scan-red {
+  background: var(--bad-bg);
+  border: 2px solid var(--bad-bd);
+}
+
+.scan-icon {
+  width: 5rem;
+  height: 5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 3rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.scan-green .scan-icon {
+  background: var(--ok-bg);
+  color: var(--ok-t);
+}
+
+.scan-red .scan-icon {
+  background: var(--bad-bg);
+  color: var(--bad-t);
+}
+
+.scan-verdict {
+  margin-top: 0.5rem;
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.scan-green .scan-verdict {
+  color: var(--ok-t);
+}
+
+.scan-red .scan-verdict {
+  color: var(--bad-t);
+}
+
+.scan-subject {
+  margin-top: 0.4rem;
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.scan-dept {
+  color: var(--muted);
+}
+
+.scan-reason {
+  margin-top: 0.4rem;
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: var(--bad-t);
+}
+
+.scan-code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.8rem;
+  color: var(--muted);
+  direction: ltr;
+}
+
+.scan-result .btn {
+  margin-top: 1.75rem;
+  width: 100%;
+}
+
+/* ── Gate-scan subject details (guard visual verification) ────────────────────── */
+.scan-details {
+  width: 100%;
+  margin-top: 1.25rem;
+  padding: 0.85rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r3);
+  background: rgba(16, 56, 46, 0.35);
+  text-align: right;
+}
+
+.scan-detail-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid rgba(201, 174, 120, 0.12);
+}
+
+.scan-detail-row:last-child {
+  border-bottom: 0;
+}
+
+.scan-detail-label {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.scan-detail-value {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.scan-owner {
+  margin-top: 0.85rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border);
+}
+
+.scan-detail-subhead {
+  margin-bottom: 0.35rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--gold);
+}
+
+/* Service-exit highlight: a non-active service status is a key rejection reason, so
+   its block is set off with the gold accent (stands out against the red result card). */
+.scan-service {
+  width: 100%;
+  margin-top: 0.85rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid rgba(201, 174, 120, 0.5);
+  border-radius: var(--r3);
+  background: rgba(201, 174, 120, 0.12);
+}
+
+.scan-service-value {
+  color: var(--gold-light);
+}
+
+/* ── My-barcode screen (employee QR, like an ID card) ─────────────────────────── */
+.barcode-card {
+  max-width: 24rem;
+}
+
+.qr-frame {
+  margin: 1.5rem auto 0;
+  width: fit-content;
+  padding: 1rem;
+  background: #ffffff;
+  border-radius: var(--r2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* qrcode.react renders an <svg>; block display avoids inline whitespace gaps. */
+.qr-frame svg {
+  display: block;
+}
+
+.id-card {
+  margin-top: 1.5rem;
+}
+
+.id-name {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.id-number {
+  margin-top: 0.3rem;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 1.05rem;
+  letter-spacing: 1px;
+  color: var(--accent);
+  direction: ltr;
+}
+
+.id-dept {
+  margin-top: 0.4rem;
+  color: var(--muted);
+}
+
+.qr-hint {
+  margin-top: 1.5rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+/* ── Camera scanner (alternative input on the scan screen) ────────────────────── */
+.btn-camera {
+  width: 100%;
+  font-size: 1.2rem;
+  padding: 0.95rem;
+}
+
+.qr-reader-wrap {
+  margin-top: 1.25rem;
+}
+
+.qr-reader {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r3);
+  background: #000;
+}
+
+/* html5-qrcode injects a <video> (and an overlay) into .qr-reader — make it fill. */
+.qr-reader video {
+  display: block;
+  width: 100% !important;
+  height: auto !important;
+}
+
+.qr-reader-hint {
+  margin-top: 0.6rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.scan-or {
+  margin: 1.25rem 0 0.25rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* ── Official government header (emblem + ministry name) ──────────────────────── */
+.gov-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.gov-emblem {
+  height: 88px;
+  width: auto;
+  object-fit: contain;
+}
+
+.gov-line-1 {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--gold);
+}
+
+.gov-line-2 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--gold-light);
+}
+
+.gov-line-3 {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* ── Dashboard (admin navigation hub) ─────────────────────────────────────────── */
+.dash-card {
+  max-width: 48rem;
+}
+
+/* Total-units badge under the subtitle. */
+.dash-count-badge {
+  display: inline-block;
+  margin-top: 0.85rem;
+  padding: 0.35rem 1rem;
+  border-radius: 999px;
+  background: rgba(201, 174, 120, 0.12);
+  border: 1px solid var(--gold-2);
+  color: var(--gold-lite);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+/* Two equal columns on wide screens; stretch so paired cards match height. */
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  align-items: stretch;
+  gap: 0.85rem;
+  margin-top: 1.5rem;
+}
+
+/* Collapse to a single column on small screens (mobile responsive). */
+@media (max-width: 560px) {
+  .dash-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Slightly smaller emblem on narrow screens. */
+  .gov-emblem {
+    height: 72px;
+  }
+}
+
+/* Horizontal card: icon (right/RTL-leading) · title+desc · arrow (left/trailing).
+   height:100% + the grid's align-items:stretch make paired cards equal-height. */
+.dash-tile {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  width: 100%;
+  height: 100%;
+  padding: 1.05rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r2);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  text-align: right;
+  cursor: pointer;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    transform 0.05s;
+}
+
+.dash-tile:hover {
+  border-color: var(--gold);
+  background: rgba(201, 174, 120, 0.08);
+}
+
+.dash-tile:active {
+  transform: translateY(1px);
+}
+
+.dash-tile-icon {
+  flex: 0 0 auto;
+  width: 2.9rem;
+  height: 2.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r3);
+  background: rgba(201, 174, 120, 0.12);
+  border: 1px solid var(--line);
+  color: var(--gold); /* linear SVG icons inherit this via stroke="currentColor" */
+}
+
+.dash-tile-icon svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  display: block;
+}
+
+.dash-tile-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.dash-tile-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--gold-lite);
+}
+
+.dash-tile-desc {
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.dash-tile-arrow {
+  flex: 0 0 auto;
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--gold);
+  opacity: 0.65;
+  transition:
+    transform 0.15s,
+    opacity 0.15s;
+}
+
+.dash-tile:hover .dash-tile-arrow {
+  opacity: 1;
+  transform: translateX(-3px);
+}
+
+/* Floating back-to-dashboard button (rendered AROUND the section screens). */
+.dash-back {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 20;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(16, 56, 46, 0.85);
+  color: var(--gold);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+
+.dash-back:hover {
+  border-color: var(--gold);
+}
+
+/* Placeholder for sections still under construction. */
+.placeholder {
+  margin-top: 2rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--muted);
+}
+
+.placeholder-icon {
+  font-size: 3rem;
+}
+
+.placeholder-text {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--gold-light);
+}
+
+/* ── Employees management ─────────────────────────────────────────────────────── */
+.employees-card {
+  max-width: 34rem;
+}
+
+.emp-heading {
+  text-align: right;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--gold);
+  margin-bottom: 0.25rem;
+}
+
+.emp-section {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  text-align: right;
+}
+
+.emp-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.emp-chip {
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.emp-chip:hover {
+  border-color: var(--gold);
+}
+
+.emp-chip-id {
+  color: var(--gold-light);
+  font-family: ui-monospace, Consolas, monospace;
+  direction: ltr;
+}
+
+.emp-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.emp-actions .btn {
+  flex: 1;
+  margin-top: 0;
+  padding: 0.65rem 0.5rem;
+  font-size: 0.95rem;
+}
+
+.btn-danger {
+  background: var(--bad-bg);
+  border: 1px solid var(--bad-bd);
+  color: var(--bad-t);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: rgba(200, 120, 112, 0.28);
+  opacity: 1;
+}
+
+/* Service exit / restore — a delineated sub-block within the employee actions. */
+.service-block {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  text-align: right;
+}
+
+.service-block .emp-actions {
+  margin-top: 0;
+}
+
+/* Directory rows are <button>s styled like .log-row but full-width and clickable. */
+.emp-dir-row {
+  display: block;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.emp-dir-row:hover {
+  border-color: var(--gold);
+}
+
+.emp-dir-selected {
+  border-color: var(--gold);
+  background: rgba(201, 174, 120, 0.1);
+}
+
+/* Compact danger action embedded in a directory row (e.g. deactivate a user). */
+.row-deactivate {
+  margin-top: 0.6rem;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--bad-bd);
+  border-radius: 999px;
+  background: var(--bad-bg);
+  color: var(--bad-t);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.row-deactivate:hover:not(:disabled) {
+  background: rgba(200, 120, 112, 0.28);
+}
+
+.row-deactivate:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Visitor permits ──────────────────────────────────────────────────────────── */
+.visitor-card {
+  max-width: 34rem;
+}
+
+.days-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.day-chip {
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.day-chip input {
+  display: none;
+}
+
+.day-on {
+  border-color: var(--gold);
+  background: rgba(201, 174, 120, 0.15);
+  color: var(--gold-light);
+}
+
+.permit-result {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+.permit-issued {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--ok-t);
+}
+
+.permit-number {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--gold-light);
+  direction: ltr;
+}
+
+.permit-meta {
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.9;
+}
+
+/* ── Vehicle permits ──────────────────────────────────────────────────────────── */
+.owner-toggle {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  padding: 0.3rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r3);
+}
+
+.vehicle-id {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.78rem;
+  color: var(--muted);
+  direction: ltr;
+  word-break: break-all;
+}
+
+/* ── Reports ──────────────────────────────────────────────────────────────────── */
+.reports-card {
+  max-width: 38rem;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.stat-card {
+  padding: 1rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r2);
+  background: rgba(255, 255, 255, 0.04);
+  text-align: center;
+}
+
+.stat-num {
+  font-size: 2rem;
+  font-weight: 800;
+  color: var(--gold-light);
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-ok {
+  color: var(--ok-t);
+}
+
+.stat-bad {
+  color: var(--bad-t);
+}
+
+.stat-label {
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.log-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.log-filters .field {
+  flex: 1;
+  min-width: 8rem;
+}
+
+.log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 1.25rem;
+}
+
+.log-row {
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r3);
+  background: rgba(255, 255, 255, 0.03);
+  text-align: right;
+}
+
+.log-row-green {
+  border-right: 3px solid var(--ok-bd);
+}
+
+.log-row-red {
+  border-right: 3px solid var(--bad-bd);
+}
+
+.log-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.log-row-head .badge {
+  margin-top: 0;
+  flex: 0 0 auto;
+}
+
+.log-name {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.log-row-meta {
+  margin-top: 0.3rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.log-reason {
+  margin-top: 0.2rem;
+  font-size: 0.85rem;
+  color: var(--bad-t);
+}
+
+.log-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.log-pager .btn {
+  margin-top: 0;
+  padding: 0.45rem 1rem;
+}
+
+.log-empty {
+  margin-top: 1.25rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* ── Users management ─────────────────────────────────────────────────────────── */
+.field-hint {
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}

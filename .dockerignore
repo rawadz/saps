@@ -1,0 +1,23 @@
+# Keep the build context small and free of secrets.
+node_modules
+dist
+coverage
+.git
+.gitignore
+
+# Secrets must never enter the image layers.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+secrets/
+
+# Local-only files
+*.log
+.vscode
+.idea
+README.md
+docker-compose*.yml
+Dockerfile

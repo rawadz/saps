@@ -1,0 +1,136 @@
+# =============================================================================
+#  e-SAPS — base stack (PRODUCTION-SAFE)
+#
+#  PostgreSQL 17 and Redis 7 attach ONLY to the private "esaps-net" network and
+#  publish NO host ports in this file. In production the backend container reaches
+#  them by SERVICE NAME (postgres:5432, redis:6379) — they are unreachable from
+#  the host or the outside world. This is the data-isolation requirement.
+#
+#  Dev-only host ports (5440 -> 5432, 6385 -> 6379) live in
+#  docker-compose.override.yml, which Compose merges automatically on
+#  `docker compose up`. To run a production-shaped stack that IGNORES the
+#  override (no datastore host ports):
+#      docker compose -f docker-compose.yml up -d --build
+# =============================================================================
+
+name: esaps
+
+services:
+  # ── Backend API ────────────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # Secrets & config are read from the git-ignored .env file at RUNTIME,
+    # never baked into the image.
+    env_file:
+      - .env
+    # These OVERRIDE whatever .env contains. How the TWO connection cases are handled:
+    #   • From the HOST machine (development): .env points DATABASE_URL / REDIS_URL
+    #     at localhost:5440 / localhost:6385 — that is what `prisma migrate` and a
+    #     host-run `npm run start:dev` connect to (the dev ports from the override).
+    #   • Inside THIS container (the backend on the private network): we rebuild the
+    #     URLs below to use the SERVICE NAMES postgres:5432 / redis:6379, because the
+    #     host ports do not exist on the internal network. Same image, no code change
+    #     — only these env vars differ between the two cases.
+    # POSTGRES_USER/PASSWORD/DB come from .env (the same values the postgres service
+    # is initialised with), so the credentials always match on both sides.
+    environment:
+      NODE_ENV: production
+      # Explicit so the container listens on the port nginx proxies to (backend:3000),
+      # regardless of any PORT in .env — dev uses 3005 on the host, which must not leak
+      # into the container and break the reverse proxy.
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?schema=public
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      # Discrete vars kept consistent for any tool that reads them instead of the URL:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # JWT keys are mounted read-only at runtime, NOT baked into the image
+      # (.dockerignore excludes *.pem as secrets). The backend reads them from /app.
+      - ./jwt-private.pem:/app/jwt-private.pem:ro
+      - ./jwt-public.pem:/app/jwt-public.pem:ro
+    networks:
+      - esaps-net
+    # No host `ports:` — the backend is reachable only through the frontend's nginx
+    # reverse proxy on the private network (backend:3000). Nothing on the host.
+    restart: unless-stopped
+
+  # ── Frontend (nginx: serves the built SPA + reverse-proxies /api → backend) ──
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "80:80"        # the ONLY host-exposed port — the public entrypoint
+    depends_on:
+      - backend
+    networks:
+      - esaps-net
+    restart: unless-stopped
+
+  # ── PostgreSQL 17 ──────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - esaps-net
+    healthcheck:
+      # $$ escapes the variable so it is expanded inside the container, where the
+      # postgres image sets POSTGRES_USER / POSTGRES_DB.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    # No `ports:` here on purpose — production keeps the DB off the host.
+
+  # ── Redis 7 ────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    # Redis ships with no authentication — require a password from the environment
+    # and enable AOF persistence.
+    command:
+      - "redis-server"
+      - "--requirepass"
+      - "${REDIS_PASSWORD}"
+      - "--appendonly"
+      - "yes"
+    # Needed by the healthcheck below (the container shell expands $REDIS_PASSWORD).
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    volumes:
+      - redisdata:/data
+    networks:
+      - esaps-net
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    # No `ports:` here on purpose — production keeps Redis off the host.
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  # Dedicated private bridge. The datastores live only here, so the only thing
+  # that can reach them is another service on this same network (the backend).
+  esaps-net:
+    driver: bridge
